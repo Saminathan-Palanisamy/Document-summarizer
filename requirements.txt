@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+neo4j
+groq
+pdfplumber
+python-docx
+rapidfuzz
+tiktoken
