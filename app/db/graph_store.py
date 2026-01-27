@@ -2,6 +2,7 @@
 
 from neo4j import GraphDatabase
 from app.config import settings
+import re
 
 
 class GraphStore:
@@ -19,28 +20,58 @@ class GraphStore:
     # -------------------------
     def store_document(self, document: dict):
         with self.driver.session(database=settings.NEO4J_DATABASE) as session:
+
+            # -------------------------
+            # Document
+            # -------------------------
             doc_title = document.get("document_title", "Untitled")
             session.execute_write(self._create_document, doc_title)
 
+            # -------------------------
+            # Articles → Sections → Chunks
+            # -------------------------
             for article in document.get("articles", []):
-                art_title = article.get("article_title", "General")
-                session.execute_write(self._create_article, doc_title, art_title)
+                raw_title = article.get("article_title", "")
 
-                for sub in article.get("subheadings", []):
-                    sub_title = sub.get("title", "Untitled")
+                # Example:
+                # "ARTICLE IV General Loan Provisions 46"
+                match = re.match(
+                    r"^(ARTICLE\s+[IVX]+)\s+(.*?)(?:\s+\d+)?$",
+                    raw_title,
+                    re.IGNORECASE
+                )
+
+                if match:
+                    article_no = match.group(1).upper()
+                    article_title = match.group(2).strip()
+                else:
+                    article_no = raw_title.upper()
+                    article_title = raw_title.strip()
+
+                # Create Article
+                session.execute_write(
+                    self._create_article,
+                    doc_title,
+                    article_no,
+                    article_title
+                )
+
+                # Sections
+                for section in article.get("sections", []):
                     session.execute_write(
-                        self._create_subheading,
+                        self._create_section,
                         doc_title,
-                        art_title,
-                        sub_title
+                        article_title,
+                        section
                     )
 
-                    for chunk in sub.get("chunks", []):
+                    # Chunks
+                    for chunk in section.get("chunks", []):
                         session.execute_write(
                             self._create_chunk,
                             doc_title,
-                            art_title,
-                            sub_title,
+                            article_title,
+                            section,
                             chunk
                         )
 
@@ -58,44 +89,55 @@ class GraphStore:
         )
 
     @staticmethod
-    def _create_article(tx, doc_title, art_title):
+    def _create_article(tx, doc_title, article_no, article_title):
         tx.run(
             """
             MATCH (d:Document {title: $doc_title})
-            MERGE (a:Article {title: $art_title})
+            MERGE (a:Article {
+                article_no: $article_no,
+                title: $article_title
+            })
             MERGE (d)-[:HAS_ARTICLE]->(a)
             """,
             doc_title=doc_title,
-            art_title=art_title
+            article_no=article_no,
+            article_title=article_title
         )
 
     @staticmethod
-    def _create_subheading(tx, doc_title, art_title, sub_title):
+    def _create_section(tx, doc_title, article_title, section):
         tx.run(
             """
             MATCH (d:Document {title: $doc_title})
-                  -[:HAS_ARTICLE]->(a:Article {title: $art_title})
-            MERGE (s:Subheading {title: $sub_title})
-            MERGE (a)-[:HAS_SUBHEADING]->(s)
+                -[:HAS_ARTICLE]->(a:Article {title: $article_title})
+            MERGE (s:Section {
+                section_id: $section_id,
+                title: $title
+            })
+            MERGE (a)-[:HAS_SECTION]->(s)
             """,
             doc_title=doc_title,
-            art_title=art_title,
-            sub_title=sub_title
+            article_title=article_title,
+            section_id=section["section_id"],
+            title=section["title"]
         )
 
     @staticmethod
-    def _create_chunk(tx, doc_title, art_title, sub_title, chunk):
+    def _create_chunk(tx, doc_title, article_title, section, chunk):
         tx.run(
             """
             MATCH (d:Document {title: $doc_title})
-                  -[:HAS_ARTICLE]->(a:Article {title: $art_title})
-                  -[:HAS_SUBHEADING]->(s:Subheading {title: $sub_title})
-            MERGE (c:Chunk {text: $text, index: $index})
+                -[:HAS_ARTICLE]->(a:Article {title: $article_title})
+                -[:HAS_SECTION]->(s:Section {section_id: $section_id})
+            CREATE (c:Chunk {
+                text: $text,
+                index: $index
+            })
             MERGE (s)-[:HAS_CHUNK]->(c)
             """,
-            text=chunk.get("text", ""),
-            index=chunk.get("chunk_index", 1),
             doc_title=doc_title,
-            art_title=art_title,
-            sub_title=sub_title
+            article_title=article_title,
+            section_id=section["section_id"],
+            text=chunk["text"],
+            index=chunk["chunk_index"]
         )

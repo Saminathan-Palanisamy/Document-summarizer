@@ -101,8 +101,8 @@ def chunk_document(document: Dict) -> Dict:
     """
 
     for article in document.get("articles", []):
-        for sub in article.get("subheadings", []):
-            sub["chunks"] = chunk_subheading(sub)
-            sub.pop("content", None)
+        for section in article.get("sections", []):
+            section["chunks"] = chunk_subheading(section)
+            section.pop("content", None)
 
     return document

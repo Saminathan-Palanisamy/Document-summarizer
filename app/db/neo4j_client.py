@@ -42,27 +42,60 @@ class Neo4jClient:
     # Fuzzy search subheadings
     # -------------------------
     def fuzzy_search_subheadings(self, article_name: str):
-        """
-        Returns all subheadings + chunks for a given article name (fuzzy search)
-        Compatible with Neo4j 5+ fulltext index syntax
-        """
         query = """
-        MATCH (a:Article)-[:HAS_SUBHEADING]->(s:Subheading)-[:HAS_CHUNK]->(c:Chunk)
-        WHERE a.title CONTAINS $name
-        RETURN a.title AS article_title,
-               a.document_title AS document_title,
-               s.title AS subheading_title,
-               collect({text: c.text, index: c.index}) AS chunks
-        ORDER BY s.title
+        MATCH (a:Article)-[:HAS_SECTION]->(s:Section)-[:HAS_CHUNK]->(c:Chunk)
+        WHERE a.title = $article
+        RETURN
+        a.title AS article_title,
+        s.section_id AS section_id,
+        s.title AS section_title,
+        collect(c.text) AS chunks
+        ORDER BY s.section_id
         """
+
         with self.driver.session(database=self.database) as session:
-            result = session.run(query, name=article_name)
+            result = session.run(query, article=article_name)
+
             subheadings = []
             for record in result:
                 subheadings.append({
-                    "document_title": record["document_title"],
                     "article_title": record["article_title"],
-                    "title": record["subheading_title"],
-                    "chunks": record["chunks"]
+                    "title": record["section_title"],
+                    "chunks": [{"text": t} for t in record["chunks"]]
                 })
+
         return subheadings
+
+    
+    def search_section(
+        self,
+        article: str = None,
+        search_text: str = None,
+        section_id: str = None
+    ):
+        cypher = """
+        MATCH (a:Article)-[:HAS_SECTION]->(s:Section)-[:HAS_CHUNK]->(c:Chunk)
+        WHERE
+        ($article IS NULL OR a.title = $article)
+        AND (
+                ($section_id IS NOT NULL AND s.section_id = $section_id)
+            OR ($search_text IS NOT NULL AND toLower(s.title) CONTAINS toLower($search_text))
+        )
+        RETURN
+            a.title AS article,
+            s.section_id AS section_id,
+            s.title AS title,
+            collect(c.text) AS content
+        ORDER BY s.section_id
+        """
+
+        with self.driver.session(database=self.database) as session:
+            result = session.run(
+                cypher,
+                article=article,
+                search_text=search_text,
+                section_id=section_id
+            )
+
+            return [r.data() for r in result]
+

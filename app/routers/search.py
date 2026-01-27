@@ -25,39 +25,38 @@ store = GraphStore()
 # -----------------------------
 # Router Endpoint
 # -----------------------------
+
 @router.post("/article-summary")
 async def get_article_summary(query: ArticleQuery):
     try:
-        article_name = query.article_name.strip()
+        user_query = query.article_name.strip()
 
-        # 1️⃣ Fuzzy search for article title
-        subheadings = neo_client.fuzzy_search_subheadings(article_name)
-        print("search for subheading started")
+        results = neo_client.search_section(
+            article=None,
+            search_text=user_query
+        )
 
-        if not subheadings:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
+        if not results:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Section not found"
+            )
 
-        # 2️⃣ Aggregate chunks per subheading
-        results = []
-        for sub in subheadings:
-            text = " ".join([c["text"] for c in sub.get("chunks", [])])
-
-            # 3️⃣ Summarize using Groq LLM
+        summaries = []
+        for r in results:
+            text = " ".join(r["content"])
             summary = groq.summarize(text)
 
-            results.append({
-                "title": sub["title"],
+            summaries.append({
+                "section_id": r["section_id"],
+                "title": r["title"],
                 "summary": summary
             })
-        print("summarizing finished=>")
-        print("results------",results)
 
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-            "document_title": subheadings[0]["document_title"],
-            "article_title": subheadings[0]["article_title"],
-            "subheadings": results
-        })
+        return {
+            "article": results[0]["article"],
+            "sections": summaries
+        }
+
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"unable to search: {str(e)}")

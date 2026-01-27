@@ -26,7 +26,7 @@ async def upload_document(file: UploadFile = File(...)):
 
         if not (filename.endswith(".pdf") or filename.endswith(".docx")):
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only PDF or DOCX files are supported"
             )
 
@@ -44,7 +44,7 @@ async def upload_document(file: UploadFile = File(...)):
         if filename.endswith(".pdf"):
             document = extract_pdf(file_path)
         else:
-            raise HTTPException(400, "DOCX support will be added next")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail= "DOCX support will be added next")
         
         print("in Extract content")
 
@@ -56,7 +56,7 @@ async def upload_document(file: UploadFile = File(...)):
 
         if not document.get("articles"):
             raise HTTPException(
-                status_code=422,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="No structured content detected in document"
             )
 
