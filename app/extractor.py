@@ -1,189 +1,27 @@
-# # extractor.py
-# import pdfplumber
-# import re
-# import os
-# from typing import List, Dict
-
-# # =========================
-# # Regex patterns
-# # =========================
-
-# # ARTICLE I Definitions 1
-# ARTICLE_REGEX = re.compile(
-#     r"^ARTICLE\s+([IVXLC\d]+)\s+(.+?)(?:\s+(\d+))?$",
-#     re.IGNORECASE
-# )
-
-# # SECTION 1.1 Definitions 1
-# SECTION_REGEX = re.compile(
-#     r"^SECTION\s+(\d+\.\d+)\s+(.+?)(?:\s+(\d+))?$",
-#     re.IGNORECASE
-# )
-
-# # Normalize whitespace
-# def normalize_space(text: str) -> str:
-#     return re.sub(r"\s+", " ", text).strip()
-
-# # =========================
-# # Step 1: Extract Articles from PDF
-# # =========================
-# def extract_articles(pdf: pdfplumber.PDF, max_pages: int = 15) -> List[Dict]:
-#     """
-#     Extracts articles and their starting pages.
-#     Returns:
-#         [
-#             {
-#                 "article_no": "ARTICLE I",
-#                 "title": "Definitions",
-#                 "start_page": 1
-#             }
-#         ]
-#     """
-#     articles = []
-
-#     for page_index, page in enumerate(pdf.pages[:max_pages]):
-#         text = page.extract_text() or ""
-#         lines = [normalize_space(l) for l in text.split("\n") if l.strip()]
-
-#         for line in lines:
-#             m = ARTICLE_REGEX.match(line)
-#             if m:
-#                 roman_num = m.group(1).upper()
-#                 title = normalize_space(m.group(2))
-#                 start_page = int(m.group(3)) if m.group(3) else page_index + 1
-
-#                 articles.append({
-#                     "article_no": f"ARTICLE {roman_num}",
-#                     "title": title,
-#                     "start_page": start_page
-#                 })
-#     return articles
-
-# # =========================
-# # Step 2: Extract Sections & their content
-# # =========================
-# def extract_sections(pdf: pdfplumber.PDF, articles: List[Dict]) -> List[Dict]:
-#     """
-#     Build the structure:
-#     [
-#         {
-#             "article_title": "ARTICLE I",
-#             "display_name": "Definitions",
-#             "sections": [
-#                 {
-#                     "section_id": "1.1",
-#                     "title": "Definitions",
-#                     "content": ["line1", "line2", ...]
-#                 }
-#             ]
-#         }
-#     ]
-#     """
-#     total_pages = len(pdf.pages)
-#     results = []
-
-#     # Sort articles by start_page
-#     articles = sorted(articles, key=lambda x: x["start_page"])
-
-#     for idx, art in enumerate(articles):
-#         start_page = art["start_page"] - 1
-#         end_page = articles[idx + 1]["start_page"] - 2 if idx + 1 < len(articles) else total_pages - 1
-
-#         article_obj = {
-#             "article_title": art["article_no"],
-#             "display_name": art["title"],
-#             "sections": []
-#         }
-
-#         current_section = None
-
-#         for p in range(start_page, min(end_page + 1, total_pages)):
-#             page = pdf.pages[p]
-#             text = page.extract_text() or ""
-#             lines = [normalize_space(l) for l in text.split("\n") if l.strip()]
-
-#             for line in lines:
-#                 sm = SECTION_REGEX.match(line)
-#                 if sm:
-#                     section_id = sm.group(1)
-#                     title = normalize_space(sm.group(2))
-#                     current_section = {
-#                         "section_id": section_id,
-#                         "title": title,
-#                         "content": []
-#                     }
-#                     article_obj["sections"].append(current_section)
-#                     continue
-
-#                 # Skip repeated ARTICLE headers inside content
-#                 if ARTICLE_REGEX.match(line):
-#                     continue
-
-#                 # Add content to current section
-#                 if current_section:
-#                     current_section["content"].append(line)
-
-#         results.append(article_obj)
-
-#     return results
-
-# # =========================
-# # Step 3: Main extraction function
-# # =========================
-# def extract_pdf(file_path: str) -> Dict:
-#     """
-#     Extract articles → sections → section content from a PDF.
-#     Returns dict ready for Neo4j insertion.
-#     """
-#     document_title = os.path.splitext(os.path.basename(file_path))[0]
-
-#     with pdfplumber.open(file_path) as pdf:
-#         articles = extract_articles(pdf, max_pages=15)
-#         if not articles:
-#             raise ValueError("No articles found — cannot proceed")
-
-#         articles_with_sections = extract_sections(pdf, articles)
-
-#     return {
-#         "document_title": document_title,
-#         "articles": articles_with_sections
-#     }
-
-# # =========================
-# # Quick test when running directly
-# # =========================
-# if __name__ == "__main__":
-#     pdf_path = "ca_AMD.pdf"  # replace with your PDF
-#     data = extract_pdf(pdf_path)
-#     print(f"Document: {data['document_title']}")
-#     for a in data["articles"]:
-#         print(f"{a['article_title']} {a['display_name']}")
-#         for s in a["sections"]:
-#             print(f"  {s['section_id']} {s['title']} -> {len(s['content'])} lines")
-
 import pdfplumber
 import re
-from collections import defaultdict
-from app.neo4j_client import Neo4jClient
 import os
+from app.neo4j_client import Neo4jClient
 
 neo4j = Neo4jClient()
 
-# 🔴 CHANGE THIS TO YOUR PDF PATH
+# 🔴 PDF Path
 PDF_PATH = r"C:\Users\ib-69\Documents\My learnings_Python\Project summarizing\Project summarizing design 2\uploads\ca_AMD.pdf"
 
-# How many first pages to scan for TOC
-# TOC_PAGES = 5
-
+# Regex
 ARTICLE_RE = re.compile(r"^ARTICLE\s+([IVXLC]+)\s+(.*)", re.IGNORECASE)
-SECTION_RE = re.compile(r"^(?:SECTION\s+)?(\d+\.\d+)\s+(.*?)(?:\s+(\d+))?$", re.IGNORECASE)
+SECTION_RE = re.compile(r"^(?:SECTION\s+)?(\d+\.\d+)\s+(.*)", re.IGNORECASE)
 PAGE_ONLY_RE = re.compile(r"^\d+$")
+
+# Chunk size (lines per chunk)
+CHUNK_SIZE = 10
 
 
 def normalize_line(line: str) -> str:
     return re.sub(r"\s+", " ", line).strip()
 
 
+# ------------------- TOC PARSING -------------------
 def extract_toc_lines(pdf_path, max_scan_pages=30):
     lines = []
     toc_pages_found = 0
@@ -201,35 +39,25 @@ def extract_toc_lines(pdf_path, max_scan_pages=30):
 
             page_lines = [normalize_line(l) for l in text.split("\n") if normalize_line(l)]
 
-            # Check if this page looks like TOC
-            toc_like = False
-            for l in page_lines:
-                if ARTICLE_RE.match(l) or SECTION_RE.match(l):
-                    toc_like = True
-                    break
-
+            toc_like = any(ARTICLE_RE.match(l) or SECTION_RE.match(l) for l in page_lines)
             if toc_like:
                 toc_pages_found += 1
                 non_toc_pages_in_row = 0
                 lines.extend(page_lines)
             else:
                 non_toc_pages_in_row += 1
-                # If we already started TOC and now 2 pages are non-TOC → stop
                 if toc_pages_found > 0 and non_toc_pages_in_row >= 2:
                     break
 
     return lines
 
 
-
 def parse_toc(lines):
     articles = {}
     current_article = None
-
-    pending_section = None  # store section waiting for page number
+    pending_section = None
 
     for line in lines:
-        # Detect ARTICLE
         m_art = ARTICLE_RE.match(line)
         if m_art:
             roman = m_art.group(1)
@@ -240,105 +68,151 @@ def parse_toc(lines):
             continue
 
         if not current_article:
-            continue  # ignore anything before first ARTICLE
+            continue
 
-        # If previous section was waiting for page number
         if pending_section and PAGE_ONLY_RE.match(line):
             sec_no, sec_title = pending_section
-            page = line
-            articles[current_article].append((sec_no, sec_title, page))
+            articles[current_article].append((sec_no, sec_title))
             pending_section = None
             continue
 
-        # Detect SECTION
         m_sec = SECTION_RE.match(line)
         if m_sec:
             sec_no = m_sec.group(1)
             sec_title = m_sec.group(2).strip().rstrip(".")
-            page = m_sec.group(3)
-
-            if page:
-                articles[current_article].append((sec_no, sec_title, page))
-                pending_section = None
-            else:
-                # Page number is probably on next line
-                pending_section = (sec_no, sec_title)
-            continue
-
-        # If line doesn't match anything, ignore (TOC noise)
-        continue
+            articles[current_article].append((sec_no, sec_title))
 
     return articles
 
 
-
-def insert_document(doc_title: str):
-    query = """
-    MERGE (d:Document {title: $title})
-    RETURN d
+# ------------------- BODY-BASED SECTION EXTRACTION -------------------
+def extract_sections_content_by_headers(pdf_path, toc_articles):
     """
-    neo4j.run(query, {"title": doc_title})
-
-
-def insert_article(doc_title: str, article_no: str, article_title: str, start_page: int):
-    query = """
-    MATCH (d:Document {title: $doc_title})
-    MERGE (a:Article {article_no: $article_no})
-    SET a.title = $article_title,
-        a.start_page = $start_page
-    MERGE (d)-[:HAS_ARTICLE]->(a)
-    RETURN a
+    Reads full PDF text and splits content by real SECTION headers.
+    Returns:
+        {
+            "ARTICLE I Something": [
+                {"section_id": "1.1", "title": "...", "content": [chunks...]},
+                ...
+            ]
+        }
     """
-    neo4j.run(query, {
-        "doc_title": doc_title,
-        "article_no": article_no,
-        "article_title": article_title,
-        "start_page": start_page
-    })
+
+    # Prepare lookup for valid sections from TOC
+    valid_sections = {}
+    for article_name, sections in toc_articles.items():
+        for sec_no, sec_title in sections:
+            valid_sections[sec_no] = sec_title
+
+    # Read full PDF lines
+    all_lines = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            lines = [normalize_line(l) for l in text.split("\n") if normalize_line(l)]
+            all_lines.extend(lines)
+
+    # Walk through lines and split by SECTION headers
+    sections_content = {}
+    current_section = None
+    current_buffer = []
+
+    section_header_re = re.compile(r"^SECTION\s+(\d+\.\d+)\s+(.*)", re.IGNORECASE)
+
+    for line in all_lines:
+        m = section_header_re.match(line)
+        if m:
+            sec_no = m.group(1)
+            sec_title = m.group(2).strip()
+
+            # Save previous section
+            if current_section:
+                sections_content[current_section]["lines"].extend(current_buffer)
+
+            # Start new section only if it's in TOC
+            if sec_no in valid_sections:
+                current_section = sec_no
+                sections_content[current_section] = {
+                    "section_id": sec_no,
+                    "title": valid_sections.get(sec_no, sec_title),
+                    "lines": []
+                }
+                current_buffer = []
+            else:
+                # Unknown section header → ignore as splitter
+                current_buffer.append(line)
+        else:
+            if current_section:
+                current_buffer.append(line)
+
+    # Save last section
+    if current_section and current_section in sections_content:
+        sections_content[current_section]["lines"].extend(current_buffer)
+
+    # Chunking
+    final_sections = {}
+    for sec_no, data in sections_content.items():
+        lines = data["lines"]
+        chunks = []
+        for i in range(0, len(lines), CHUNK_SIZE):
+            chunk_text = " ".join(lines[i:i + CHUNK_SIZE])
+            chunks.append({"type": "text", "value": chunk_text})
+
+        final_sections[sec_no] = {
+            "section_id": sec_no,
+            "title": data["title"],
+            "content": chunks
+        }
+
+    # Map back to articles
+    article_map = {article: [] for article in toc_articles}
+
+    for article_name, sections in toc_articles.items():
+        for sec_no, sec_title in sections:
+            if sec_no in final_sections:
+                article_map[article_name].append(final_sections[sec_no])
+            else:
+                # Section exists in TOC but not found in body
+                article_map[article_name].append({
+                    "section_id": sec_no,
+                    "title": sec_title,
+                    "content": []
+                })
+
+    return article_map
 
 
-def insert_section(article_no: str, section_no: str, section_title: str, start_page: int):
-    query = """
-    MATCH (a:Article {article_no: $article_no})
-    MERGE (s:Section {section_no: $section_no})
-    SET s.title = $section_title,
-        s.start_page = $start_page
-    MERGE (a)-[:HAS_SECTION]->(s)
-    RETURN s
-    """
-    neo4j.run(query, {
-        "article_no": article_no,
-        "section_no": section_no,
-        "section_title": section_title,
-        "start_page": start_page
-    })
-
-
-
-def main():
+# ------------------- INSERT INTO NEO4J -------------------
+def insert_full_document(pdf_path):
     print("📄 Reading TOC from PDF...")
-    lines = extract_toc_lines(PDF_PATH)
+    toc_lines = extract_toc_lines(pdf_path)
+    toc_articles = parse_toc(toc_lines)
 
-    articles = parse_toc(lines)
+    print("📑 Extracting section content using SECTION headers...")
+    sections_content = extract_sections_content_by_headers(pdf_path, toc_articles)
 
-    print("\n================ TOC STRUCTURE ================\n")
-    for article, sections in articles.items():
-        print(article)
-        for sec_no, title, page in sections:
-            print(f"  {sec_no} {title} -> page {page}")
-        print()
+    # Build document structure
+    document_title = os.path.splitext(os.path.basename(pdf_path))[0]
+    document = {
+        "document_title": document_title,
+        "articles": []
+    }
 
-    print("🚀 Inserting TOC into Neo4j...")
+    for article_name, sections in sections_content.items():
+        parts = article_name.split(" ", 2)
+        article_no = parts[1] if len(parts) > 1 else article_name
+        display_name = parts[2] if len(parts) > 2 else article_name
 
+        document["articles"].append({
+            "article_title": article_no,
+            "display_name": display_name,
+            "sections": sections
+        })
 
-    doc_title = os.path.splitext(os.path.basename(PDF_PATH))[0]
-    neo4j.insert_toc_only(doc_title, articles)
-
-
-
-    print("✅ Done. TOC inserted into Neo4j. No body content touched.")
-
+    print("🚀 Inserting full document into Neo4j...")
+    neo4j.insert_document_with_articles(document)
+    print("✅ Done. Document with section content inserted.")
 
 
 if __name__ == "__main__":
-    main()
+    insert_full_document(PDF_PATH)
