@@ -1,44 +1,37 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException,status
-import shutil, os
-
-from app.extractor import extract_pdf
-from app.neo4j_client import Neo4jClient
+from fastapi import APIRouter, UploadFile, File, HTTPException, status
+import os
+import shutil
+from fastapi.responses import JSONResponse
+from app.extractor import insert_full_document  
 
 router = APIRouter()
+
 
 @router.post("/document")
 def extract_document(file: UploadFile = File(...)):
     try:
+        # uploads folder create pannum
         os.makedirs("uploads", exist_ok=True)
-        path = f"uploads/{file.filename}"
 
-        # Save uploaded file
-        with open(path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+        file_path = os.path.join("uploads", file.filename)
 
-        try:
-            document = extract_pdf(path)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        # uploaded file save pannum
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-        articles = document.get("articles", [])
+        # unga existing function call
+        insert_full_document(file_path)
 
-        if not articles:
-            raise HTTPException(status_code=400, detail="No articles extracted from document")
-
-        neo = Neo4jClient()
-        neo.init_schema()
-
-        # ✅ INSERT ONCE
-        neo.insert_document_with_articles(document)
-
-        return {
-            "document_title": document.get("document_title"),
-            "articles_inserted": len(articles)
-        }
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+            "status": "success",
+            "filename": file.filename,
+            "message": "PDF extracted and inserted into Neo4j successfully"
+        })
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"unable to extract {str(e)}"
+            detail=str(e)
         )

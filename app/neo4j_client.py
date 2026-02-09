@@ -12,6 +12,12 @@ class Neo4jClient:
 
     def close(self):
         self.driver.close()
+        
+    def run(self, query, params=None):
+        with self.driver.session() as session:
+            result = session.run(query, params or {})
+            return list(result)
+
 
     def init_schema(self):
         """Create fulltext index for articles"""
@@ -21,6 +27,7 @@ class Neo4jClient:
             FOR (a:Article)
             ON EACH [a.title]
             """)
+
 
     # ------------------- TOC INSERTION -------------------
     def insert_toc_only(self, document_title: str, articles: dict):
@@ -162,3 +169,39 @@ class Neo4jClient:
             RETURN node.article_no AS article_no, node.title AS title
             """, q=article_name)
             return [r.data() for r in result]
+        
+
+    def get_article_with_sections_and_chunks(self, article_input: str):
+        query = """
+        MATCH (a:Article)
+        WHERE a.article_no = $article_input OR a.title CONTAINS $article_input
+        MATCH (a)-[:HAS_SECTION]->(s:Section)
+        OPTIONAL MATCH (s)-[:HAS_CHUNK]->(c:Chunk)
+        RETURN a.article_no AS article_no,
+            a.title AS article_title,
+            s.section_no AS section_no,
+            s.title AS section_title,
+            collect(c.text) AS chunks
+        ORDER BY s.section_no
+        """
+        result = self.run(query, {"article_input": article_input})
+
+        rows = list(result)
+        if not rows:
+            return None
+
+        article = {
+            "article_no": rows[0]["article_no"],
+            "article_title": rows[0]["article_title"],
+            "sections": []
+        }
+
+        for row in rows:
+            article["sections"].append({
+                "section_no": row["section_no"],
+                "section_title": row["section_title"],
+                "chunks": row["chunks"] or []
+            })
+
+        return article
+

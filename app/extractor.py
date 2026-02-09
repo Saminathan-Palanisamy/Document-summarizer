@@ -214,5 +214,3 @@ def insert_full_document(pdf_path):
     print("✅ Done. Document with section content inserted.")
 
 
-if __name__ == "__main__":
-    insert_full_document(PDF_PATH)
