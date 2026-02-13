@@ -113,6 +113,8 @@ class Neo4jClient:
                         "display_name": article["display_name"]
                     }
                 )
+                print("Inserting article:", article["article_title"], "Sections count:", len(article.get("sections", [])))
+            
 
                 # Sections + Chunks
                 for sec in article.get("sections", []):
@@ -120,45 +122,21 @@ class Neo4jClient:
                         """
                         MATCH (a:Article {article_no: $article_no})
                         MERGE (s:Section {section_no: $section_id})
-                        SET s.title = $title
+                        SET s.title = $title,
+                            s.full_text = $full_text
                         MERGE (a)-[:HAS_SECTION]->(s)
                         """,
                         {
                             "article_no": article["article_title"],
                             "section_id": sec["section_id"],
-                            "title": sec.get("title", "")
+                            "title": sec["title"],
+                            "full_text": sec.get("content", "")
                         }
                     )
+                    print("  Inserting section:", sec["section_id"], "Text length:", len(sec.get("content", "")))
 
-                    for idx, item in enumerate(sec.get("content", [])):
-                        if isinstance(item, str):
-                            chunk_type = "text"
-                            text = item
-                            page = None
-                        else:
-                            chunk_type = item.get("type", "text")
-                            text = item.get("value", "")
-                            page = item.get("page", None)
 
-                        session.run(
-                            """
-                            MATCH (s:Section {section_no: $section_id})
-                            CREATE (c:Chunk {
-                                idx: $idx,
-                                type: $type,
-                                text: $text,
-                                page: $page
-                            })
-                            MERGE (s)-[:HAS_CHUNK]->(c)
-                            """,
-                            {
-                                "section_id": sec["section_id"],
-                                "idx": idx,
-                                "type": chunk_type,
-                                "text": text,
-                                "page": page
-                            }
-                        )
+
 
     # ------------------- SEARCH -------------------
     def search_article(self, article_name):
@@ -176,12 +154,11 @@ class Neo4jClient:
         MATCH (a:Article)
         WHERE a.article_no = $article_input OR a.title CONTAINS $article_input
         MATCH (a)-[:HAS_SECTION]->(s:Section)
-        OPTIONAL MATCH (s)-[:HAS_CHUNK]->(c:Chunk)
         RETURN a.article_no AS article_no,
             a.title AS article_title,
             s.section_no AS section_no,
             s.title AS section_title,
-            collect(c.text) AS chunks
+            s.full_text AS full_text
         ORDER BY s.section_no
         """
         result = self.run(query, {"article_input": article_input})
@@ -200,7 +177,7 @@ class Neo4jClient:
             article["sections"].append({
                 "section_no": row["section_no"],
                 "section_title": row["section_title"],
-                "chunks": row["chunks"] or []
+                "full_text": row["full_text"] or ""
             })
 
         return article

@@ -79,7 +79,7 @@ def parse_toc(lines):
         m_sec = SECTION_RE.match(line)
         if m_sec:
             sec_no = m_sec.group(1)
-            sec_title = m_sec.group(2).strip().rstrip(".")
+            sec_title = re.sub(r"\s+\d+$", "", m_sec.group(2).strip().rstrip("."))
             articles[current_article].append((sec_no, sec_title))
 
     return articles
@@ -138,6 +138,8 @@ def extract_sections_content_by_headers(pdf_path, toc_articles):
                     "lines": []
                 }
                 current_buffer = []
+                # Add title line as first content line
+                current_buffer.append(sec_title)
             else:
                 # Unknown section header → ignore as splitter
                 current_buffer.append(line)
@@ -153,16 +155,14 @@ def extract_sections_content_by_headers(pdf_path, toc_articles):
     final_sections = {}
     for sec_no, data in sections_content.items():
         lines = data["lines"]
-        chunks = []
-        for i in range(0, len(lines), CHUNK_SIZE):
-            chunk_text = " ".join(lines[i:i + CHUNK_SIZE])
-            chunks.append({"type": "text", "value": chunk_text})
+        full_text = " ".join(lines)
 
         final_sections[sec_no] = {
             "section_id": sec_no,
             "title": data["title"],
-            "content": chunks
+            "content": full_text
         }
+
 
     # Map back to articles
     article_map = {article: [] for article in toc_articles}

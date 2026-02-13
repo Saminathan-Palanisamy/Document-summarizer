@@ -30,7 +30,7 @@ def get_article_summary(article_name: str):
         print(f"📘 Found Article: {article['article_no']} - {article['article_title']}")
 
         for sec in article["sections"]:
-            full_text = " ".join(sec["chunks"])
+            full_text = sec["full_text"]
             print(f"🧩 Summarizing Section {sec['section_no']} ...")
 
             summary = summarize_text(full_text)
