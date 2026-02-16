@@ -8,8 +8,24 @@ def summarize_text(text: str) -> str:
         return ""
 
     prompt = f"""
-    Summarize the following legal section in clear, simple English.
-    Keep it concise and accurate.
+    You are summarizing a section of a commercial loan agreement.
+
+    First determine what TYPE of section this is:
+    - Conditions precedent
+    - Representation or warranty
+    - Covenant
+    - Event of default
+    - Fee provision
+    - Miscellaneous clause
+
+    Then summarize it appropriately:
+    - Extract legal obligations
+    - Identify triggers and consequences
+    - Identify financial requirements if any
+    - Explain practical legal effect
+
+    Write clearly in structured bullet format.
+    Maximum 250 words.
 
     TEXT:
     {text}
@@ -18,7 +34,9 @@ def summarize_text(text: str) -> str:
     resp = client.chat.completions.create(
         model="openai/gpt-oss-120b",
         messages=[
-            {"role": "system", "content": "You are a legal document summarizer."},
+            {"role": "system", "content": "You are an expert legal analyst. "
+                    "You summarize credit agreements by extracting their legal meaning "
+                    "and organizing obligations clearly."},
             {"role": "user", "content": prompt}
         ],
         temperature=0.2,

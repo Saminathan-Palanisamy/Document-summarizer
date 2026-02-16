@@ -87,22 +87,12 @@ def parse_toc(lines):
 
 # ------------------- BODY-BASED SECTION EXTRACTION -------------------
 def extract_sections_content_by_headers(pdf_path, toc_articles):
-    """
-    Reads full PDF text and splits content by real SECTION headers.
-    Returns:
-        {
-            "ARTICLE I Something": [
-                {"section_id": "1.1", "title": "...", "content": [chunks...]},
-                ...
-            ]
-        }
-    """
 
     # Prepare lookup for valid sections from TOC
     valid_sections = {}
     for article_name, sections in toc_articles.items():
         for sec_no, sec_title in sections:
-            valid_sections[sec_no] = sec_title
+            valid_sections[sec_no] = sec_title.strip()
 
     # Read full PDF lines
     all_lines = []
@@ -112,37 +102,47 @@ def extract_sections_content_by_headers(pdf_path, toc_articles):
             lines = [normalize_line(l) for l in text.split("\n") if normalize_line(l)]
             all_lines.extend(lines)
 
-    # Walk through lines and split by SECTION headers
     sections_content = {}
     current_section = None
     current_buffer = []
 
-    section_header_re = re.compile(r"^SECTION\s+(\d+\.\d+)\s+(.*)", re.IGNORECASE)
+    # 🔥 Improved header detection
+    section_header_re = re.compile(
+        r"^(?:SECTION\s+)?(\d+\.\d+)\s+(.*)",
+        re.IGNORECASE
+    )
 
     for line in all_lines:
         m = section_header_re.match(line)
+
         if m:
             sec_no = m.group(1)
-            sec_title = m.group(2).strip()
+            sec_title_line = m.group(2).strip()
 
-            # Save previous section
-            if current_section:
-                sections_content[current_section]["lines"].extend(current_buffer)
-
-            # Start new section only if it's in TOC
+            # 🔴 Important: split only if this section exists in TOC
             if sec_no in valid_sections:
+
+                # Save previous section
+                if current_section:
+                    sections_content[current_section]["lines"].extend(current_buffer)
+
                 current_section = sec_no
+                current_buffer = []
+
                 sections_content[current_section] = {
                     "section_id": sec_no,
-                    "title": valid_sections.get(sec_no, sec_title),
+                    "title": valid_sections.get(sec_no, sec_title_line),
                     "lines": []
                 }
-                current_buffer = []
-                # Add title line as first content line
-                current_buffer.append(sec_title)
-            else:
-                # Unknown section header → ignore as splitter
+
+                # Add full header line once
                 current_buffer.append(line)
+
+            else:
+                # This is just reference like "Section 1.9 shall..."
+                if current_section:
+                    current_buffer.append(line)
+
         else:
             if current_section:
                 current_buffer.append(line)
@@ -151,20 +151,23 @@ def extract_sections_content_by_headers(pdf_path, toc_articles):
     if current_section and current_section in sections_content:
         sections_content[current_section]["lines"].extend(current_buffer)
 
-    # Chunking
+    # 🔥 Clean + Chunk
     final_sections = {}
+
     for sec_no, data in sections_content.items():
-        lines = data["lines"]
-        full_text = " ".join(lines)
+        raw_text = " ".join(data["lines"])
+        cleaned = clean_text(raw_text)
+
+        chunks = chunk_text(cleaned, chunk_size=300, overlap=50)
 
         final_sections[sec_no] = {
             "section_id": sec_no,
             "title": data["title"],
-            "content": full_text
+            "content": cleaned,
+            "chunks": chunks
         }
 
-
-    # Map back to articles
+    # 🔥 Map back to Articles
     article_map = {article: [] for article in toc_articles}
 
     for article_name, sections in toc_articles.items():
@@ -172,11 +175,11 @@ def extract_sections_content_by_headers(pdf_path, toc_articles):
             if sec_no in final_sections:
                 article_map[article_name].append(final_sections[sec_no])
             else:
-                # Section exists in TOC but not found in body
                 article_map[article_name].append({
                     "section_id": sec_no,
                     "title": sec_title,
-                    "content": []
+                    "content": "",
+                    "chunks": []
                 })
 
     return article_map
@@ -213,4 +216,39 @@ def insert_full_document(pdf_path):
     neo4j.insert_document_with_articles(document)
     print("✅ Done. Document with section content inserted.")
 
+#-----------
+def clean_text(text: str) -> str:
+    # Remove URLs
+    text = re.sub(r"https?://\S+", " ", text)
+
+    # Remove page indicators like "92/159", "12/22/24, 9:43 PM", "Document"
+    text = re.sub(r"\b\d+/\d+\b", " ", text)
+    text = re.sub(r"\bDocument\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b\d{1,2}/\d{1,2}/\d{2,4}.*?(AM|PM)\b", " ", text)
+
+    # Remove extra numbers that are alone in lines
+    text = re.sub(r"\s+\d+\s+", " ", text)
+
+    # Normalize spaces
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
+
+def chunk_text(text: str, chunk_size=300, overlap=50):
+    words = text.split()
+    chunks = []
+
+    start = 0
+    while start < len(words):
+        end = start + chunk_size
+        chunk_words = words[start:end]
+        chunk = " ".join(chunk_words)
+        chunks.append(chunk)
+
+        # overlap for context
+        start = end - overlap
+        if start < 0:
+            start = 0
+
+    return chunks
 
